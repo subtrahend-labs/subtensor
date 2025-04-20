@@ -4,7 +4,7 @@ use safe_math::*;
 use share_pool::{SharePool, SharePoolDataOperations};
 use sp_runtime::Saturating;
 use sp_std::ops::Neg;
-use substrate_fixed::types::{I64F64, I96F32, U64F64, U96F32, U110F18};
+use substrate_fixed::types::{I64F64, I96F32, U110F18, U64F64, U96F32};
 
 impl<T: Config> Pallet<T> {
     /// Retrieves the total alpha issuance for a given subnet.
@@ -59,32 +59,68 @@ impl<T: Config> Pallet<T> {
             U96F32::saturating_from_num(SubnetMovingPrice::<T>::get(netuid))
         }
     }
+
+    pub fn get_l_max() -> U96F32 {
+        U96F32::saturating_from_num(2000)
+    }
+
+    pub fn compute_alpha_for_ema(l: U96F32, l_max: U96F32) -> U96F32 {
+        // comment this
+        let i_l_max = I96F32::saturating_from_num(l_max);
+        let i_l = I96F32::saturating_from_num(l);
+        let neg_one = I96F32::from_num(-1);
+        let two = I96F32::from_num(2);
+        let a = I96F32::from_num(7).saturating_div(two);
+        let b = neg_one;
+        let c = I96F32::from_num(3).saturating_div(two);
+        let d = neg_one.saturating_mul(I96F32::from_num(4));
+        let x = (two.saturating_mul(i_l).saturating_div(i_l_max)).saturating_add(neg_one);
+
+        let x_cubed = x.saturating_mul(x).saturating_mul(x);
+        let f_x = ((a.saturating_mul(x_cubed).saturating_add(b))
+            .saturating_mul(x_cubed)
+            .saturating_add(c))
+        .saturating_mul(x)
+        .saturating_add(d);
+
+        let abs_f_x = f_x.saturating_neg();
+        let exp = abs_f_x.ceil();
+
+        let exp_int = exp.to_num::<u32>();
+        let mut alpha = I96F32::from_num(1);
+        let ten = I96F32::from_num(10);
+
+        for _ in 0..exp_int {
+            alpha = alpha.saturating_div(ten);
+        }
+
+        U96F32::saturating_from_num(alpha)
+    }
+
     pub fn update_moving_price(netuid: u16) {
-        let blocks_since_start_call = U96F32::saturating_from_num({
-            // We expect FirstEmissionBlockNumber to be set earlier, and we take the block when
-            // `start_call` was called (first block before FirstEmissionBlockNumber).
-            let start_call_block = FirstEmissionBlockNumber::<T>::get(netuid)
-                .unwrap_or_default()
-                .saturating_sub(1);
+        let tao_reserves = U96F32::saturating_from_num(SubnetTAO::<T>::get(netuid));
+        let alpha_reserves = U96F32::saturating_from_num(SubnetAlphaIn::<T>::get(netuid));
 
-            Self::get_current_block_as_u64().saturating_sub(start_call_block)
-        });
+        let k = tao_reserves.saturating_mul(alpha_reserves);
+        let epsilon: U96F32 = U96F32::from_num(0.0000001); // TODO: how accurate to make this baby
+        let l = checked_sqrt(k, epsilon).unwrap_or(U96F32::from_num(0));
+        let l_max = Self::get_l_max();
+        let alpha = Self::compute_alpha_for_ema(l, l_max);
 
-        let halving_time = EMAPriceHalvingBlocks::<T>::get(netuid);
-        let current_ma_unsigned = U96F32::saturating_from_num(SubnetMovingAlpha::<T>::get());
-        let alpha: U96F32 = current_ma_unsigned.saturating_mul(blocks_since_start_call.safe_div(
-            blocks_since_start_call.saturating_add(U96F32::saturating_from_num(halving_time)),
-        ));
         // Because alpha = b / (b + h), where b and h > 0, alpha < 1, so 1 - alpha > 0.
         // We can use unsigned type here: U96F32
         let one_minus_alpha: U96F32 = U96F32::saturating_from_num(1.0).saturating_sub(alpha);
-        let current_price: U96F32 = alpha
-            .saturating_mul(Self::get_alpha_price(netuid).min(U96F32::saturating_from_num(1.0)));
-        let current_moving: U96F32 =
-            one_minus_alpha.saturating_mul(Self::get_moving_alpha_price(netuid));
-        // Convert batch to signed I96F32 to avoid migration of SubnetMovingPrice for now``
-        let new_moving: I96F32 =
-            I96F32::saturating_from_num(current_price.saturating_add(current_moving));
+        let moving_price = Self::get_moving_alpha_price(netuid);
+        let current_price = Self::get_alpha_price(netuid);
+        let weighted_current_price: U96F32 = alpha.saturating_mul(current_price);
+        let weighted_current_moving: U96F32 = one_minus_alpha.saturating_mul(moving_price);
+
+        // Convert batch to signed I96F32 to avoid migration of SubnetMovingPrice for now
+        let mut new_moving: I96F32 = I96F32::saturating_from_num(
+            weighted_current_price.saturating_add(weighted_current_moving),
+        );
+
+        new_moving = new_moving.min(I96F32::from_num(current_price));
         SubnetMovingPrice::<T>::insert(netuid, new_moving);
     }
 

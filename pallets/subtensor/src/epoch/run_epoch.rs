@@ -208,6 +208,7 @@ impl<T: Config> Pallet<T> {
         let mut bonds_delta: Vec<Vec<I32F32>> = row_hadamard(&weights_for_bonds, &active_stake); // ΔB = W◦S
         inplace_col_normalize(&mut bonds_delta); // sum_i b_ij = 1
         log::trace!("ΔB:\n{:?}\n", &bonds_delta);
+
         // Compute the Exponential Moving Average (EMA) of bonds.
         let mut ema_bonds = Self::compute_ema_bonds(netuid, consensus.clone(), bonds_delta, bonds);
         inplace_col_normalize(&mut ema_bonds); // sum_i b_ij = 1
