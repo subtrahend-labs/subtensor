@@ -1068,6 +1068,7 @@ parameter_types! {
     pub const InitialDissolveNetworkScheduleDuration: BlockNumber = 5 * 24 * 60 * 60 / 12; // 5 days
     pub const SubtensorInitialTaoWeight: u64 = 971_718_665_099_567_868; // 0.05267697438728329% tao weight.
     pub const InitialEmaPriceHalvingPeriod: u64 = 201_600_u64; // 4 weeks
+    pub const LiquidityScaleMax: u64 = 2000; // TODO: figure out what this should be
     pub const DurationOfStartCall: u64 = if cfg!(feature = "fast-blocks") {
         10 // Only 10 blocks for fast blocks
     } else {
@@ -1137,6 +1138,7 @@ impl pallet_subtensor::Config for Runtime {
     type InitialColdkeySwapScheduleDuration = InitialColdkeySwapScheduleDuration;
     type InitialDissolveNetworkScheduleDuration = InitialDissolveNetworkScheduleDuration;
     type InitialEmaPriceHalvingPeriod = InitialEmaPriceHalvingPeriod;
+    type LiquidityScaleMax = LiquidityScaleMax;
     type DurationOfStartCall = DurationOfStartCall;
 }
 
