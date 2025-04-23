@@ -1448,7 +1448,7 @@ pub mod pallet {
             Ok(())
         }
 
-        ///
+        /// Change liquidity scale max for a given subnet.
         ///
         /// # Arguments
         /// * `origin` - The origin of the call, which must be the root account.
